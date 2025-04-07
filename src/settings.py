@@ -1,75 +1,29 @@
-from PySide6.QtWidgets import (QDialog, QLabel, QPushButton, QSlider, 
-                             QColorDialog, QGridLayout, QHBoxLayout,
-                             QFileDialog)
-from PySide6.QtCore import Qt, QSettings
+from PySide6.QtWidgets import QFileDialog, QColorDialog
+from PySide6.QtCore import QSettings
 from PySide6.QtGui import QColor
 
-class SettingsDialog(QDialog):
+from src.ui.settings_ui import SettingsDialogUI
+
+class SettingsDialog(SettingsDialogUI):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.parent = parent
-        self.setWindowTitle("设置")
         self.settings = QSettings("StealthReader", "Settings")
         
-        # 设置对话框大小
-        self.resize(500, 250)
-        
-        # 创建布局
-        layout = QGridLayout(self)
-        
-        # 文件选择设置 - 改为第一行，放在位置 (0, 0) 和 (0, 1)
-        layout.addWidget(QLabel("文本文件:"), 0, 0)
-        fileLayout = QHBoxLayout()
-        self.filePathLabel = QLabel(parent.file_path if parent.file_path else "未选择文件")
-        self.filePathLabel.setStyleSheet("border: 1px solid gray; padding: 2px;")
-        self.filePathLabel.setWordWrap(True)
-        self.filePathLabel.setMinimumWidth(300)
-        fileLayout.addWidget(self.filePathLabel, 1)
-        
-        self.fileChooseBtn = QPushButton("浏览...")
-        self.fileChooseBtn.clicked.connect(self.choose_file)
-        fileLayout.addWidget(self.fileChooseBtn)
-        layout.addLayout(fileLayout, 0, 1)
-        
-        # 背景颜色设置 - 改为第二行，放在位置 (1, 0) 和 (1, 1)
-        layout.addWidget(QLabel("背景颜色:"), 1, 0)
-        self.bgColorBtn = QPushButton()
+        # 设置初始值
+        self.filePathLabel.setText(parent.file_path if parent.file_path else "未选择文件")
         self.bgColorBtn.setStyleSheet(f"background-color: {parent.bg_color.name()}")
-        self.bgColorBtn.clicked.connect(self.choose_bg_color)
-        layout.addWidget(self.bgColorBtn, 1, 1)
-        
-        # 背景透明度设置 - 改为第三行
-        layout.addWidget(QLabel("背景透明度:"), 2, 0)
-        self.bgAlphaSlider = QSlider(Qt.Orientation.Horizontal)
-        self.bgAlphaSlider.setRange(0, 255)
         self.bgAlphaSlider.setValue(parent.bg_alpha)
-        self.bgAlphaSlider.valueChanged.connect(self.update_parent_styles)
-        layout.addWidget(self.bgAlphaSlider, 2, 1)
-        
-        # 文本颜色设置 - 改为第四行
-        layout.addWidget(QLabel("文本颜色:"), 3, 0)
-        self.textColorBtn = QPushButton()
         self.textColorBtn.setStyleSheet(f"background-color: {parent.text_color.name()}")
-        self.textColorBtn.clicked.connect(self.choose_text_color)
-        layout.addWidget(self.textColorBtn, 3, 1)
-        
-        # 文本透明度设置 - 改为第五行
-        layout.addWidget(QLabel("文本透明度:"), 4, 0)
-        self.textAlphaSlider = QSlider(Qt.Orientation.Horizontal)
-        self.textAlphaSlider.setRange(0, 255)
         self.textAlphaSlider.setValue(parent.text_alpha)
-        self.textAlphaSlider.valueChanged.connect(self.update_parent_styles)
-        layout.addWidget(self.textAlphaSlider, 4, 1)
         
-        # 保存和取消按钮 - 改为第六行
-        buttonLayout = QHBoxLayout()
-        saveBtn = QPushButton("保存")
-        saveBtn.clicked.connect(self.save_settings)
-        cancelBtn = QPushButton("取消")
-        cancelBtn.clicked.connect(self.reject)
-        buttonLayout.addWidget(saveBtn)
-        buttonLayout.addWidget(cancelBtn)
-        layout.addLayout(buttonLayout, 5, 0, 1, 2)
+        # 连接信号和槽
+        self.fileChooseBtn.clicked.connect(self.choose_file)
+        self.bgColorBtn.clicked.connect(self.choose_bg_color)
+        self.textColorBtn.clicked.connect(self.choose_text_color)
+        self.bgAlphaSlider.valueChanged.connect(self.update_parent_styles)
+        self.textAlphaSlider.valueChanged.connect(self.update_parent_styles)
+        self.saveBtn.clicked.connect(self.save_settings)
+        self.cancelBtn.clicked.connect(self.reject)
         
         # 存储原始设置以便取消时还原
         self.original_settings = {

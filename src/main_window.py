@@ -1,11 +1,11 @@
-from PySide6.QtWidgets import (QApplication, QMainWindow, QTextEdit, QVBoxLayout, QWidget, QSystemTrayIcon, QMenu, 
+from PySide6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QWidget, QSystemTrayIcon, QMenu, 
                              QPushButton, QMessageBox, QFileDialog)
 from PySide6.QtCore import Qt, QSettings
 from PySide6.QtGui import QCursor, QIcon, QColor
 import keyboard
 
-from src.settings_dialog import SettingsDialog
-from src.custom_widgets import CustomTextEdit
+from src.settings import SettingsDialog
+from src.ui.custom_widgets import CustomTextEdit
 
 class MainWindow(QMainWindow):
     def __init__(self):
