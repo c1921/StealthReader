@@ -1,6 +1,7 @@
-from PySide6.QtWidgets import QApplication, QMainWindow, QTextEdit, QVBoxLayout, QWidget, QSystemTrayIcon, QMenu, QPushButton, QMessageBox
-from PySide6.QtCore import Qt, QPoint, QRect
-from PySide6.QtGui import QColor, QCursor, QIcon
+from PySide6.QtWidgets import (QApplication, QMainWindow, QTextEdit, QVBoxLayout, QWidget, QSystemTrayIcon, QMenu, 
+                              QPushButton, QMessageBox, QDialog, QSlider, QColorDialog, QLabel, QGridLayout, QHBoxLayout)
+from PySide6.QtCore import Qt, QSettings
+from PySide6.QtGui import QCursor, QIcon, QColor
 import sys
 import ctypes
 import keyboard
@@ -12,6 +13,113 @@ def is_admin():
         return ctypes.windll.shell32.IsUserAnAdmin() != 0
     except:
         return False
+
+class SettingsDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.parent = parent
+        self.setWindowTitle("设置")
+        self.settings = QSettings("StealthReader", "Settings")
+        
+        # 设置对话框大小
+        self.resize(400, 200)  # 减小高度，因为不再需要预览区域
+        
+        # 创建布局
+        layout = QGridLayout(self)
+        
+        # 背景颜色设置
+        layout.addWidget(QLabel("背景颜色:"), 0, 0)
+        self.bgColorBtn = QPushButton()
+        self.bgColorBtn.setStyleSheet(f"background-color: {parent.bg_color.name()}")
+        self.bgColorBtn.clicked.connect(self.choose_bg_color)
+        layout.addWidget(self.bgColorBtn, 0, 1)
+        
+        # 背景透明度设置
+        layout.addWidget(QLabel("背景透明度:"), 1, 0)
+        self.bgAlphaSlider = QSlider(Qt.Orientation.Horizontal)
+        self.bgAlphaSlider.setRange(0, 255)
+        self.bgAlphaSlider.setValue(parent.bg_alpha)
+        self.bgAlphaSlider.valueChanged.connect(self.update_parent_styles)
+        layout.addWidget(self.bgAlphaSlider, 1, 1)
+        
+        # 文本颜色设置
+        layout.addWidget(QLabel("文本颜色:"), 2, 0)
+        self.textColorBtn = QPushButton()
+        self.textColorBtn.setStyleSheet(f"background-color: {parent.text_color.name()}")
+        self.textColorBtn.clicked.connect(self.choose_text_color)
+        layout.addWidget(self.textColorBtn, 2, 1)
+        
+        # 文本透明度设置
+        layout.addWidget(QLabel("文本透明度:"), 3, 0)
+        self.textAlphaSlider = QSlider(Qt.Orientation.Horizontal)
+        self.textAlphaSlider.setRange(0, 255)
+        self.textAlphaSlider.setValue(parent.text_alpha)
+        self.textAlphaSlider.valueChanged.connect(self.update_parent_styles)
+        layout.addWidget(self.textAlphaSlider, 3, 1)
+        
+        # 保存和取消按钮
+        buttonLayout = QHBoxLayout()
+        saveBtn = QPushButton("保存")
+        saveBtn.clicked.connect(self.save_settings)
+        cancelBtn = QPushButton("取消")
+        cancelBtn.clicked.connect(self.reject)
+        buttonLayout.addWidget(saveBtn)
+        buttonLayout.addWidget(cancelBtn)
+        layout.addLayout(buttonLayout, 4, 0, 1, 2)
+        
+        # 存储原始设置以便取消时还原
+        self.original_settings = {
+            'bg_color': QColor(parent.bg_color),
+            'bg_alpha': parent.bg_alpha,
+            'text_color': QColor(parent.text_color),
+            'text_alpha': parent.text_alpha
+        }
+    
+    def choose_bg_color(self):
+        color = QColorDialog.getColor(self.parent.bg_color, self, "选择背景颜色")
+        if color.isValid():
+            self.parent.bg_color = color
+            self.bgColorBtn.setStyleSheet(f"background-color: {color.name()}")
+            self.update_parent_styles()
+    
+    def choose_text_color(self):
+        color = QColorDialog.getColor(self.parent.text_color, self, "选择文本颜色")
+        if color.isValid():
+            self.parent.text_color = color
+            self.textColorBtn.setStyleSheet(f"background-color: {color.name()}")
+            self.update_parent_styles()
+    
+    def update_parent_styles(self):
+        """实时更新主窗口样式"""
+        # 临时更新父窗口的属性
+        self.parent.bg_alpha = self.bgAlphaSlider.value()
+        self.parent.text_alpha = self.textAlphaSlider.value()
+        
+        # 更新主窗口样式
+        self.parent.update_styles()
+    
+    def save_settings(self):
+        """保存设置到配置文件"""
+        # 保存到配置文件
+        self.settings.setValue("bg_color", self.parent.bg_color.name())
+        self.settings.setValue("bg_alpha", self.parent.bg_alpha)
+        self.settings.setValue("text_color", self.parent.text_color.name())
+        self.settings.setValue("text_alpha", self.parent.text_alpha)
+        
+        self.accept()
+    
+    def reject(self):
+        """取消设置更改，恢复原始设置"""
+        # 恢复原始设置
+        self.parent.bg_color = self.original_settings['bg_color']
+        self.parent.bg_alpha = self.original_settings['bg_alpha']
+        self.parent.text_color = self.original_settings['text_color']
+        self.parent.text_alpha = self.original_settings['text_alpha']
+        
+        # 更新主窗口样式
+        self.parent.update_styles()
+        
+        super().reject()
 
 class CustomTextEdit(QTextEdit):
     def mousePressEvent(self, event):
@@ -27,6 +135,10 @@ class CustomTextEdit(QTextEdit):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        # 加载设置
+        self.settings = QSettings("StealthReader", "Settings")
+        self.load_settings()
+        
         # 设置无边框窗口
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         # 设置窗口透明背景
@@ -34,19 +146,6 @@ class MainWindow(QMainWindow):
         
         # 创建主窗口部件
         self.central_widget = QWidget()
-        self.central_widget.setStyleSheet("""
-            QWidget {
-                background: rgba(255, 255, 255, 180);
-                border: 1px solid rgba(153, 153, 153, 180);
-                border-radius: 5px;
-            }
-            QTextEdit {
-                border: none;
-                background: transparent;
-                selection-background-color: transparent;
-                selection-color: inherit;
-            }
-        """)
         self.setCentralWidget(self.central_widget)
         
         # 创建布局
@@ -99,21 +198,6 @@ class MainWindow(QMainWindow):
         
         # 添加最小化到托盘按钮
         self.minimizeButton = QPushButton("🗕", self)
-        self.minimizeButton.setStyleSheet("""
-            QPushButton {
-                background-color: rgba(255, 255, 255, 50);
-                color: black;
-                border: none;
-                border-radius: 3px;
-                padding: 5px;
-                font-size: 16px;
-                min-width: 30px;
-                min-height: 30px;
-            }
-            QPushButton:hover {
-                background-color: rgba(255, 255, 255, 100);
-            }
-        """)
         self.minimizeButton.setGeometry(self.width() - 40, 10, 30, 30)
         self.minimizeButton.clicked.connect(self.hideToTray)
         
@@ -125,6 +209,12 @@ class MainWindow(QMainWindow):
         self.trayMenu = QMenu()
         self.showAction = self.trayMenu.addAction("显示")
         self.showAction.triggered.connect(self.showNormal)
+        
+        # 添加设置菜单项
+        self.settingsAction = self.trayMenu.addAction("设置")
+        self.settingsAction.triggered.connect(self.show_settings)
+        
+        self.trayMenu.addSeparator()
         self.quitAction = self.trayMenu.addAction("退出")
         self.quitAction.triggered.connect(QApplication.quit)
         
@@ -136,7 +226,59 @@ class MainWindow(QMainWindow):
         
         # 设置全局快捷键
         self.setup_global_hotkey()
-
+        
+        # 应用样式
+        self.update_styles()
+    
+    def load_settings(self):
+        """加载设置"""
+        self.bg_color = QColor(self.settings.value("bg_color", "#FFFFFF"))
+        self.bg_alpha = int(self.settings.value("bg_alpha", 180))
+        self.text_color = QColor(self.settings.value("text_color", "#000000"))
+        self.text_alpha = int(self.settings.value("text_alpha", 255))
+    
+    def update_styles(self):
+        """更新样式"""
+        # 设置主窗口样式
+        self.central_widget.setStyleSheet(f"""
+            QWidget {{
+                background: rgba({self.bg_color.red()}, {self.bg_color.green()}, {self.bg_color.blue()}, {self.bg_alpha});
+                border: none;
+                border-radius: 5px;
+            }}
+            QTextEdit {{
+                border: none;
+                background: transparent;
+                color: rgba({self.text_color.red()}, {self.text_color.green()}, {self.text_color.blue()}, {self.text_alpha});
+                selection-background-color: transparent;
+                selection-color: inherit;
+            }}
+        """)
+        
+        # 更新按钮样式
+        self.minimizeButton.setStyleSheet(f"""
+            QPushButton {{
+                background-color: rgba({self.bg_color.red()}, {self.bg_color.green()}, {self.bg_color.blue()}, 50);
+                color: rgba({self.text_color.red()}, {self.text_color.green()}, {self.text_color.blue()}, {self.text_alpha});
+                border: none;
+                border-radius: 3px;
+                padding: 5px;
+                font-size: 16px;
+                min-width: 30px;
+                min-height: 30px;
+            }}
+            QPushButton:hover {{
+                background-color: rgba({self.bg_color.red()}, {self.bg_color.green()}, {self.bg_color.blue()}, 100);
+            }}
+        """)
+    
+    def show_settings(self):
+        """显示设置对话框"""
+        dialog = SettingsDialog(self)
+        if dialog.exec():
+            # 设置已经在对话框的save_settings方法中保存
+            pass
+    
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             # 存储初始窗口位置和大小
