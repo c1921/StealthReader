@@ -1,7 +1,17 @@
-from PySide6.QtWidgets import QApplication, QMainWindow, QTextEdit, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QMainWindow, QTextEdit, QVBoxLayout, QWidget, QSystemTrayIcon, QMenu, QPushButton, QMessageBox
 from PySide6.QtCore import Qt, QPoint, QRect
-from PySide6.QtGui import QColor, QCursor
+from PySide6.QtGui import QColor, QCursor, QIcon
 import sys
+import ctypes
+import keyboard
+import os
+
+def is_admin():
+    """检查程序是否以管理员权限运行"""
+    try:
+        return ctypes.windll.shell32.IsUserAnAdmin() != 0
+    except:
+        return False
 
 class CustomTextEdit(QTextEdit):
     def mousePressEvent(self, event):
@@ -86,6 +96,46 @@ class MainWindow(QMainWindow):
             "bottom": QCursor(Qt.CursorShape.SizeVerCursor),
             "default": QCursor(Qt.CursorShape.ArrowCursor)
         }
+        
+        # 添加最小化到托盘按钮
+        self.minimizeButton = QPushButton("🗕", self)
+        self.minimizeButton.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(255, 255, 255, 50);
+                color: black;
+                border: none;
+                border-radius: 3px;
+                padding: 5px;
+                font-size: 16px;
+                min-width: 30px;
+                min-height: 30px;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 100);
+            }
+        """)
+        self.minimizeButton.setGeometry(self.width() - 40, 10, 30, 30)
+        self.minimizeButton.clicked.connect(self.hideToTray)
+        
+        # 创建系统托盘
+        self.tray = QSystemTrayIcon(self)
+        self.tray.setIcon(QIcon("icon.svg"))  # 使用自定义SVG图标
+        
+        # 创建托盘菜单
+        self.trayMenu = QMenu()
+        self.showAction = self.trayMenu.addAction("显示")
+        self.showAction.triggered.connect(self.showNormal)
+        self.quitAction = self.trayMenu.addAction("退出")
+        self.quitAction.triggered.connect(QApplication.quit)
+        
+        self.tray.setContextMenu(self.trayMenu)
+        self.tray.show()
+        
+        # 托盘图标双击显示窗口
+        self.tray.activated.connect(self.onTrayIconActivated)
+        
+        # 设置全局快捷键
+        self.setup_global_hotkey()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -202,7 +252,84 @@ class MainWindow(QMainWindow):
             self._initial_pos = None
             QApplication.restoreOverrideCursor()  # 恢复默认鼠标指针
 
+    def hideToTray(self):
+        """隐藏窗口到系统托盘"""
+        self.hide()
+        
+    def onTrayIconActivated(self, reason):
+        """处理托盘图标激活事件"""
+        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+            self.showNormal()
+    
+    def resizeEvent(self, event):
+        """重写resizeEvent以保持按钮位置"""
+        super().resizeEvent(event)
+        self.minimizeButton.move(self.width() - 40, 10)
+
+    def setup_global_hotkey(self):
+        """设置全局快捷键"""
+        # 检查管理员权限
+        if not is_admin():
+            QMessageBox.warning(
+                self, 
+                "权限不足", 
+                "全局快捷键功能需要管理员权限才能正常工作。\n"
+                "请右键点击程序，选择'以管理员身份运行'。\n"
+                "程序将继续运行，但全局快捷键可能无效。"
+            )
+        
+        # 注册全局快捷键
+        try:
+            # 注册 Ctrl+Alt+H 用于隐藏/显示窗口
+            keyboard.add_hotkey('ctrl+alt+h', self.toggle_visibility)
+            
+            # 在菜单中添加快捷键提示
+            self.showAction.setText("显示 (Ctrl+Alt+H)")
+        except Exception as e:
+            QMessageBox.critical(self, "快捷键注册失败", f"无法注册全局快捷键: {str(e)}")
+    
+    def toggle_visibility(self):
+        """切换窗口的可见状态"""
+        if self.isVisible():
+            self.hide()
+        else:
+            self.showNormal()
+            self.activateWindow()  # 确保窗口获得焦点
+    
+    def closeEvent(self, event):
+        """关闭事件处理"""
+        # 程序退出前清理快捷键注册
+        try:
+            keyboard.unhook_all()
+        except:
+            pass
+        event.accept()
+
 if __name__ == '__main__':
+    # 检查是否已以管理员身份运行，如果不是，尝试重新启动
+    if not is_admin() and sys.platform == 'win32':
+        # 显示提示消息
+        ctypes.windll.user32.MessageBoxW(0, 
+            "全局快捷键功能需要管理员权限。\n程序将尝试以管理员身份重新启动。", 
+            "需要管理员权限", 0)
+        
+        # 获取当前脚本路径
+        script = sys.executable
+        params = sys.argv
+        params.insert(0, script)
+        
+        # 以管理员权限重新启动程序
+        try:
+            if sys.executable.endswith("pythonw.exe"):
+                # pythonw 隐藏控制台
+                ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join('"'+p+'"' for p in params[1:]), None, 1)
+            else:
+                # python 显示控制台
+                ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join('"'+p+'"' for p in params[1:]), None, 1)
+            sys.exit(0)
+        except:
+            pass
+
     app = QApplication(sys.argv)
     window = MainWindow()
     window.show()
