@@ -1,11 +1,11 @@
 from PySide6.QtWidgets import (QApplication, QMainWindow, QTextEdit, QVBoxLayout, QWidget, QSystemTrayIcon, QMenu, 
-                              QPushButton, QMessageBox, QDialog, QSlider, QColorDialog, QLabel, QGridLayout, QHBoxLayout)
+                              QPushButton, QMessageBox, QDialog, QSlider, QColorDialog, QLabel, QGridLayout, QHBoxLayout,
+                              QFileDialog)
 from PySide6.QtCore import Qt, QSettings
 from PySide6.QtGui import QCursor, QIcon, QColor
 import sys
 import ctypes
 import keyboard
-import os
 
 def is_admin():
     """检查程序是否以管理员权限运行"""
@@ -22,10 +22,24 @@ class SettingsDialog(QDialog):
         self.settings = QSettings("StealthReader", "Settings")
         
         # 设置对话框大小
-        self.resize(400, 200)  # 减小高度，因为不再需要预览区域
+        self.resize(500, 250)
         
         # 创建布局
         layout = QGridLayout(self)
+        
+        # 文件选择设置
+        layout.addWidget(QLabel("文本文件:"), 0, 0)
+        fileLayout = QHBoxLayout()
+        self.filePathLabel = QLabel(parent.file_path if parent.file_path else "未选择文件")
+        self.filePathLabel.setStyleSheet("border: 1px solid gray; padding: 2px;")
+        self.filePathLabel.setWordWrap(True)
+        self.filePathLabel.setMinimumWidth(300)
+        fileLayout.addWidget(self.filePathLabel, 1)
+        
+        self.fileChooseBtn = QPushButton("浏览...")
+        self.fileChooseBtn.clicked.connect(self.choose_file)
+        fileLayout.addWidget(self.fileChooseBtn)
+        layout.addLayout(fileLayout, 0, 1)
         
         # 背景颜色设置
         layout.addWidget(QLabel("背景颜色:"), 0, 0)
@@ -72,8 +86,26 @@ class SettingsDialog(QDialog):
             'bg_color': QColor(parent.bg_color),
             'bg_alpha': parent.bg_alpha,
             'text_color': QColor(parent.text_color),
-            'text_alpha': parent.text_alpha
+            'text_alpha': parent.text_alpha,
+            'file_path': parent.file_path
         }
+        
+        # 临时文件路径
+        self.temp_file_path = parent.file_path
+    
+    def choose_file(self):
+        """选择要显示的文本文件"""
+        options = QFileDialog.Options()
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "选择文本文件", "", "文本文件 (*.txt);;所有文件 (*)", options=options
+        )
+        
+        if file_path:
+            self.temp_file_path = file_path
+            self.filePathLabel.setText(file_path)
+            
+            # 加载文件并更新显示
+            self.parent.load_file(file_path)
     
     def choose_bg_color(self):
         color = QColorDialog.getColor(self.parent.bg_color, self, "选择背景颜色")
@@ -100,11 +132,15 @@ class SettingsDialog(QDialog):
     
     def save_settings(self):
         """保存设置到配置文件"""
+        # 将临时文件路径保存到父窗口
+        self.parent.file_path = self.temp_file_path
+        
         # 保存到配置文件
         self.settings.setValue("bg_color", self.parent.bg_color.name())
         self.settings.setValue("bg_alpha", self.parent.bg_alpha)
         self.settings.setValue("text_color", self.parent.text_color.name())
         self.settings.setValue("text_alpha", self.parent.text_alpha)
+        self.settings.setValue("file_path", self.parent.file_path)
         
         self.accept()
     
@@ -115,6 +151,14 @@ class SettingsDialog(QDialog):
         self.parent.bg_alpha = self.original_settings['bg_alpha']
         self.parent.text_color = self.original_settings['text_color']
         self.parent.text_alpha = self.original_settings['text_alpha']
+        
+        # 如果文件路径已更改，则恢复原始文件
+        if self.temp_file_path != self.original_settings['file_path']:
+            self.parent.file_path = self.original_settings['file_path']
+            if self.parent.file_path:
+                self.parent.load_file(self.parent.file_path)
+            else:
+                self.parent.text_edit.setText("这是一个示例文本，窗口是半透明的，文本是只读的。")
         
         # 更新主窗口样式
         self.parent.update_styles()
@@ -172,8 +216,12 @@ class MainWindow(QMainWindow):
         # 设置调整大小的边距
         self.MARGINS = 8
         
-        # 添加一些示例文本
-        self.text_edit.setText("这是一个示例文本，窗口是半透明的，文本是只读的。")
+        # 加载文本文件（如果有）
+        if self.file_path:
+            self.load_file(self.file_path)
+        else:
+            # 添加一些示例文本
+            self.text_edit.setText("这是一个示例文本，窗口是半透明的，文本是只读的。")
         
         # 最小窗口尺寸
         self.MIN_WIDTH = 200
@@ -210,6 +258,9 @@ class MainWindow(QMainWindow):
         self.showAction = self.trayMenu.addAction("显示")
         self.showAction.triggered.connect(self.showNormal)
         
+        self.openFileAction = self.trayMenu.addAction("打开文件")
+        self.openFileAction.triggered.connect(self.open_file_dialog)
+        
         # 添加设置菜单项
         self.settingsAction = self.trayMenu.addAction("设置")
         self.settingsAction.triggered.connect(self.show_settings)
@@ -236,6 +287,49 @@ class MainWindow(QMainWindow):
         self.bg_alpha = int(self.settings.value("bg_alpha", 180))
         self.text_color = QColor(self.settings.value("text_color", "#000000"))
         self.text_alpha = int(self.settings.value("text_alpha", 255))
+        self.file_path = self.settings.value("file_path", "")
+    
+    def load_file(self, file_path):
+        """加载文本文件到编辑器"""
+        try:
+            # 使用 Python 内置方式读取文件
+            with open(file_path, 'r', encoding='utf-8') as file:
+                text = file.read()
+                self.text_edit.setText(text)
+                
+                # 更新窗口标题以显示文件名
+                file_name = file_path.split("/")[-1].split("\\")[-1]
+                self.setWindowTitle(f"StealthReader - {file_name}")
+                return True
+        except UnicodeDecodeError:
+            # 如果 UTF-8 解码失败，尝试其他编码
+            try:
+                with open(file_path, 'r', encoding='gbk') as file:
+                    text = file.read()
+                    self.text_edit.setText(text)
+                    
+                    # 更新窗口标题以显示文件名
+                    file_name = file_path.split("/")[-1].split("\\")[-1]
+                    self.setWindowTitle(f"StealthReader - {file_name}")
+                    return True
+            except Exception as e:
+                QMessageBox.critical(self, "错误", f"读取文件时出错 (GBK): {str(e)}")
+                return False
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"读取文件时出错: {str(e)}")
+            return False
+    
+    def open_file_dialog(self):
+        """打开文件选择对话框"""
+        options = QFileDialog.Options()
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "选择文本文件", "", "文本文件 (*.txt);;所有文件 (*)", options=options
+        )
+        
+        if file_path:
+            if self.load_file(file_path):
+                self.file_path = file_path
+                self.settings.setValue("file_path", file_path)
     
     def update_styles(self):
         """更新样式"""
